@@ -28,29 +28,36 @@ use clap::{crate_description, crate_name, crate_version};
 use clap::{App, AppSettings, Arg};
 use std::path::Path;
 
-use crate::config::Config;
+use crate::output::Output;
 
-pub fn config() -> (String, Config) {
-    let args = cli_parser().get_matches();
-
-    let input = args.value_of("file").unwrap();
-
-    let debug = args.is_present("debug");
-
-    let verbose = args.is_present("verbose");
-
-    let config = Config { debug, verbose };
-
-    (String::from(input), config)
-}
-
-fn cli_parser() -> App<'static, 'static> {
+pub fn build() -> App<'static, 'static> {
     let color = atty::is(Stream::Stdout);
 
     let color = if color {
         AppSettings::ColoredHelp
     } else {
         AppSettings::ColorNever
+    };
+
+    let format = Arg::with_name("format")
+        .long("format")
+        .help("output format")
+        .long_help(
+"Specify output format of the report. `prometheus` uses the Prometheus' \
+ metric exposition format. `oneline` is intended as machine-readable output \
+ that shows a colon (\":\") separated list of age, total, accessed, and \
+ modified size in bytes, followed by the directory. `table` (cargo feature, \
+ enabled by default) shows a pretty-printed table."
+        )
+        .takes_value(true)
+        .case_insensitive(true)
+        .possible_values(&Output::variants())
+        .display_order(1);
+
+    let format = if cfg!(feature = "table") {
+        format.default_value("table")
+    } else {
+        format.default_value("continuous")
     };
 
     App::new(crate_name!())
@@ -62,6 +69,7 @@ fn cli_parser() -> App<'static, 'static> {
         .help_short("?")
         .help_message("show this help output")
         .version_message("show version")
+        .arg(&format)
         .arg(
             Arg::with_name("file")
                 .help("strace output file name")

@@ -23,7 +23,28 @@
  *                                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use clap::value_t;
+use clap::ArgMatches;
+
+use crate::output::Output;
+
 pub struct Config {
     pub debug: bool,
     pub verbose: bool,
+    pub output: Output,
+}
+
+impl Config {
+    pub fn from_args(args: &ArgMatches) -> Config {
+        let debug = args.is_present("debug");
+        let verbose = args.is_present("verbose");
+
+        let output = value_t!(args, "format", Output).unwrap();
+
+        Config {
+            debug,
+            verbose,
+            output,
+        }
+    }
 }

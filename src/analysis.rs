@@ -34,7 +34,7 @@ use crate::config::Config;
 use crate::log::*;
 use crate::summary::Summary;
 
-pub fn run(input: String, config: Config) -> io::Result<()> {
+pub fn run(input: &str, config: Config) -> io::Result<()> {
     let input = Path::new(&input);
 
     let stdin = Summary::new("STDIN");
@@ -134,8 +134,8 @@ fn analyze(
             Regex::new(r#"^write\((\d+),.*, (\d+)\)\s+= (\d+)$"#).unwrap();
     }
 
-    for l in BufReader::new(file).lines() {
-        let line = l?;
+    for line in BufReader::new(file).lines() {
+        let line = line?;
 
         for cap in RE_CREAT.captures_iter(&line) {
             let file = &cap[1];
