@@ -23,17 +23,74 @@
  *                                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-
 use config::Config;
 use log::*;
 
 use bytesize::ByteSize;
 use std::collections::HashMap;
 
-#[derive(Clone)]
-#[derive(Debug)]
+use std::fmt;
+
+#[derive(Clone, Debug)]
+pub struct FileDescription {
+    pub path: String,
+}
+
+impl FileDescription {
+    pub fn new(path: String) -> FileDescription {
+        FileDescription { path }
+    }
+}
+
+impl fmt::Display for FileDescription {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FILE Path:{}", self.path)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SocketDescription {
+    bind: String,
+    connect: String,
+}
+
+impl SocketDescription {
+    pub fn new() -> SocketDescription {
+        SocketDescription {
+            bind: String::new(),
+            connect: String::new(),
+        }
+    }
+}
+
+impl fmt::Display for SocketDescription {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SOCKET Bind:{} Connect:{}", self.bind, self.connect)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum GenericFileDescriptor {
+    File(FileDescription),
+    Socket(SocketDescription),
+    Pipe,
+}
+
+impl fmt::Display for GenericFileDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GenericFileDescriptor::File(file_description) => write!(f, "{}", file_description),
+            GenericFileDescriptor::Socket(socket_description) => {
+                write!(f, "{}", socket_description)
+            }
+            GenericFileDescriptor::Pipe => write!(f, "PIPE"),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Summary {
-    pub file: String,
+    pub descriptor: GenericFileDescriptor,
     read_freq: HashMap<u64, u64>,
     write_freq: HashMap<u64, u64>,
     read_bytes: u64,
@@ -41,9 +98,9 @@ pub struct Summary {
 }
 
 impl Summary {
-    pub fn new(file: String) -> Summary {
+    pub fn new(descriptor: GenericFileDescriptor) -> Summary {
         Summary {
-            file,
+            descriptor,
             read_freq: HashMap::new(),
             write_freq: HashMap::new(),
             read_bytes: 0,
@@ -51,12 +108,16 @@ impl Summary {
         }
     }
 
+    pub fn file(path: String) -> Summary {
+        Summary::new(GenericFileDescriptor::File(FileDescription::new(path)))
+    }
+
     pub fn pipe() -> Summary {
-        Summary::new(String::from("PIPE"))
+        Summary::new(GenericFileDescriptor::Pipe)
     }
 
     pub fn socket() -> Summary {
-        Summary::new(String::from("SOCKET"))
+        Summary::new(GenericFileDescriptor::Socket(SocketDescription::new()))
     }
 
     pub fn reset(&mut self) {
@@ -79,30 +140,36 @@ impl Summary {
     }
 
     pub fn show(&self, config: &Config) {
-        if !config.verbose &&
-            (self.file.starts_with("/bin/") ||
-             self.file == "/dev/null" ||
-             self.file.starts_with("/etc/") ||
-             self.file.starts_with("/lib/") ||
-             self.file.starts_with("/lib64/") ||
-             self.file.starts_with("/opt/") ||
-             self.file.starts_with("/proc/") ||
-             self.file.starts_with("/run/") ||
-             self.file.starts_with("/sbin/") ||
-             self.file.starts_with("/sys/") ||
-             self.file.starts_with("/tmp/") ||
-             self.file.starts_with("/usr/") ||
-             self.file == "STDOUT" ||
-             self.file == "STDERR" ||
-             self.file == "STDIN" ||
-             self.file == "SOCKET" ||
-             self.file == "DUP" ||
-             self.file == "PIPE") {
-                return;
+        if !config.verbose {
+            if let GenericFileDescriptor::File(file_description) = &self.descriptor {
+                if file_description.path.starts_with("/bin/")
+                    || file_description.path == "/dev/null"
+                    || file_description.path.starts_with("/etc/")
+                    || file_description.path.starts_with("/lib/")
+                    || file_description.path.starts_with("/lib64/")
+                    || file_description.path.starts_with("/opt/")
+                    || file_description.path.starts_with("/proc/")
+                    || file_description.path.starts_with("/run/")
+                    || file_description.path.starts_with("/sbin/")
+                    || file_description.path.starts_with("/sys/")
+                    || file_description.path.starts_with("/tmp/")
+                    || file_description.path.starts_with("/usr/")
+                    || file_description.path == "STDOUT"
+                    || file_description.path == "STDERR"
+                    || file_description.path == "STDIN"
+                    || file_description.path == "DUP"
+                {
+                    return;
+                }
             }
 
+            if let GenericFileDescriptor::Pipe = self.descriptor {
+                return;
+            }
+        }
+
         if self.read_freq.is_empty() && self.write_freq.is_empty() {
-            debug(format!("no I/O with {}", self.file), config);
+            debug(format!("no I/O with {}", self.descriptor), config);
             return;
         }
 
@@ -115,7 +182,7 @@ impl Summary {
                 humanize(self.read_bytes),
                 n_ops,
                 humanize(*op_size),
-                self.file,
+                self.descriptor,
             );
         }
 
@@ -128,7 +195,7 @@ impl Summary {
                 humanize(self.write_bytes),
                 n_ops,
                 humanize(*op_size),
-                self.file,
+                self.descriptor,
             );
         }
     }

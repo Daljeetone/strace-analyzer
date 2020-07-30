@@ -23,9 +23,9 @@
  *                                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-
 use config::Config;
 use log::*;
+use summary;
 use summary::Summary;
 
 use regex::Regex;
@@ -34,38 +34,33 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-fn dup(fds: &mut HashMap<u32, Summary>,
-       syscall: &str,
-       oldfd: &u32,
-       newfd: u32,
-       config: &Config) {
-
+fn dup(fds: &mut HashMap<u32, Summary>, syscall: &str, oldfd: &u32, newfd: u32, config: &Config) {
     let summary = if let Some(summary_old) = fds.get(&oldfd) {
-        let old_file = &summary_old.file;
+        let old_file = &summary_old.descriptor;
 
         debug(
             format!("[{}] {} -> {} => {}", syscall, oldfd, &newfd, old_file),
-            config
+            config,
         );
 
         Summary::new(old_file.clone())
     } else {
-        debug(format!("[{}] couldn't find oldfd {}", syscall, oldfd), config);
+        debug(
+            format!("[{}] couldn't find oldfd {}", syscall, oldfd),
+            config,
+        );
 
-        Summary::new(String::from("DUP"))
+        Summary::file(String::from("DUP"))
     };
 
     insert(fds, newfd, summary, syscall, config);
 }
 
-fn finish(fds: &mut HashMap<u32, Summary>,
-          fd: u32,
-          syscall: &str,
-          config: &Config) {
+fn finish(fds: &mut HashMap<u32, Summary>, fd: u32, syscall: &str, config: &Config) {
     if let Some(summary) = fds.remove(&fd) {
         debug(
-            format!("[{}] {} => {}", syscall, fd, summary.file),
-            config
+            format!("[{}] {} => {}", syscall, fd, summary.descriptor),
+            config,
         );
 
         summary.show(config);
@@ -74,87 +69,78 @@ fn finish(fds: &mut HashMap<u32, Summary>,
     }
 }
 
-fn insert(fds: &mut HashMap<u32, Summary>,
-          fd: u32,
-          summary: Summary,
-          syscall: &str,
-          config: &Config) {
+fn insert(
+    fds: &mut HashMap<u32, Summary>,
+    fd: u32,
+    summary: Summary,
+    syscall: &str,
+    config: &Config,
+) {
     if let Some(summary) = fds.insert(fd, summary) {
-        debug(format!(
-            "[{}] dropping {} without explicit close",
-            syscall, summary.file
-        ), config);
+        debug(
+            format!(
+                "[{}] dropping {} without explicit close",
+                syscall, summary.descriptor
+            ),
+            config,
+        );
 
         summary.show(config)
     };
 }
 
-fn join_paths(fds: &HashMap<u32, Summary>,
-              dirfd: &str,
-              pathname: &str) -> String {
+fn join_paths(fds: &HashMap<u32, Summary>, dirfd: &str, pathname: &str) -> String {
     match dirfd {
-        "AT_FDCWD" => {
-            String::from(pathname)
-        },
+        "AT_FDCWD" => String::from(pathname),
         fd_str => {
             let dirfd: u32 = fd_str.parse().unwrap();
+            let mut effective_path = String::from(pathname);
 
             if let Some(dir_summary) = fds.get(&dirfd) {
-                let mut path = PathBuf::new();
-                path.push(dir_summary.file.clone());
-                path.push(pathname.clone());
+                if let summary::GenericFileDescriptor::File(file_description) =
+                    &dir_summary.descriptor
+                {
+                    let mut path = PathBuf::new();
+                    path.push(file_description.path.clone());
+                    path.push(pathname.clone());
 
-                if let Some(path) = path.to_str() {
-                    String::from(path)
-                } else {
-                    String::from(pathname)
+                    if let Some(path) = path.to_str() {
+                        effective_path = String::from(path);
+                    }
                 }
-            } else {
-                String::from(pathname)
             }
-        },
+            effective_path
+        }
     }
 }
 
-pub fn analyze(fds: &mut HashMap<u32, Summary>,
-               input: &Path,
-               config: &Config) -> io::Result<()> {
+pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -> io::Result<()> {
     let file = File::open(input)?;
 
     lazy_static! {
-        static ref RE_CLONE: Regex = Regex::new(
-            r#"^clone\(.*\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_CLONE: Regex = Regex::new(r#"^clone\(.*\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_CLOSE: Regex = Regex::new(
-            r#"^close\((\d+)\)\s+= (-?\d+)\s*([A-Z]*).*$"#
-        ).unwrap();
+        static ref RE_CLOSE: Regex =
+            Regex::new(r#"^close\((\d+)\)\s+= (-?\d+)\s*([A-Z]*).*$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_CREAT: Regex = Regex::new(
-            r#"^creat\("([^"]+)", .+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_CREAT: Regex = Regex::new(r#"^creat\("([^"]+)", .+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_DUP: Regex = Regex::new(
-            r#"^dup\((\d+)\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_DUP: Regex = Regex::new(r#"^dup\((\d+)\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_DUP2: Regex = Regex::new(
-            r#"^dup2\((\d+), \d+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_DUP2: Regex = Regex::new(r#"^dup2\((\d+), \d+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_FCNTL_DUP: Regex = Regex::new(
-            r#"^fcntl\((\d+), F_DUPFD, \d+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_FCNTL_DUP: Regex =
+            Regex::new(r#"^fcntl\((\d+), F_DUPFD, \d+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
@@ -165,45 +151,34 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
     }
 
     lazy_static! {
-        static ref RE_OPENAT: Regex = Regex::new(
-            r#"^openat\((\d+|AT_FDCWD), "([^"]+)", .+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_OPENAT: Regex =
+            Regex::new(r#"^openat\((\d+|AT_FDCWD), "([^"]+)", .+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_PIPE: Regex = Regex::new(
-            r#"^pipe\(\[(\d+), (\d+)\]\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_PIPE: Regex = Regex::new(r#"^pipe\(\[(\d+), (\d+)\]\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_PREAD: Regex = Regex::new(
-            r#"^pread\((\d+),.*, (\d+), \d+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_PREAD: Regex =
+            Regex::new(r#"^pread\((\d+),.*, (\d+), \d+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_PWRITE: Regex = Regex::new(
-            r#"^pwrite\((\d+),.*, (\d+), \d+\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_PWRITE: Regex =
+            Regex::new(r#"^pwrite\((\d+),.*, (\d+), \d+\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_READ: Regex = Regex::new(
-            r#"^read\((\d+),.*, (\d+)\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_READ: Regex = Regex::new(r#"^read\((\d+),.*, (\d+)\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_SOCKET: Regex = Regex::new(
-            r#"^socket\(.*\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_SOCKET: Regex = Regex::new(r#"^socket\(.*\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_WRITE: Regex = Regex::new(
-            r#"^write\((\d+),.*, (\d+)\)\s+= (\d+)$"#
-        ).unwrap();
+        static ref RE_WRITE: Regex = Regex::new(r#"^write\((\d+),.*, (\d+)\)\s+= (\d+)$"#).unwrap();
     }
 
     for l in BufReader::new(file).lines() {
@@ -216,7 +191,7 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
             debug(format!("[creat] {} => {}", fd, file), config);
 
             let syscall = "creat";
-            insert(fds, fd, Summary::new(file), syscall, config);
+            insert(fds, fd, Summary::file(file), syscall, config);
         }
 
         for cap in RE_CLOSE.captures_iter(&line) {
@@ -226,16 +201,14 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
             let syscall = "close";
 
             match (status, error) {
-                (0, _) =>
-                    finish(fds, fd, syscall, config),
+                (0, _) => finish(fds, fd, syscall, config),
 
-                (_, "EBADF") =>
-                    debug(format!("[close] {} => bad fd", fd), config),
+                (_, "EBADF") => debug(format!("[close] {} => bad fd", fd), config),
 
                 (_, error) => {
                     verbose(format!("[close] {} => {}", fd, error), config);
                     finish(fds, fd, syscall, config)
-                },
+                }
             }
         }
 
@@ -246,7 +219,7 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
 
             verbose(
                 format!("[clone] tracing pid {} in {:?} ...", pid, trace),
-                config
+                config,
             );
 
             let mut cfds = fds.clone();
@@ -288,7 +261,7 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
             debug(format!("[open] {} => {}", fd, file), config);
 
             let syscall = "open";
-            insert(fds, fd, Summary::new(file), syscall, config);
+            insert(fds, fd, Summary::file(file), syscall, config);
         }
 
         for cap in RE_OPENAT.captures_iter(&line) {
@@ -301,7 +274,7 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>,
             debug(format!("[openat] {} => {}", fd, file), config);
 
             let syscall = "openat";
-            insert(fds, fd, Summary::new(file), syscall, config);
+            insert(fds, fd, Summary::file(file), syscall, config);
         }
 
         for cap in RE_PIPE.captures_iter(&line) {

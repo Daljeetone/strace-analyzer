@@ -23,7 +23,6 @@
  *                                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-
 use config::Config;
 
 pub fn debug(message: String, config: &Config) {

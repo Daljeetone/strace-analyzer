@@ -23,7 +23,6 @@
  *                                                                           *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-
 mod analysis;
 mod config;
 mod log;
@@ -58,16 +57,14 @@ fn main() -> io::Result<()> {
         .version(crate_version!())
         .global_setting(color)
         .about("analyze strace output")
-        .arg(Arg::with_name("file")
-             .help("strace log")
-             .required(true))
-        .arg(Arg::with_name("debug")
-             .long("debug")
-             .help("debug output"))
-        .arg(Arg::with_name("verbose")
-             .short("v")
-             .long("verbose")
-             .help("verbose output"))
+        .arg(Arg::with_name("file").help("strace log").required(true))
+        .arg(Arg::with_name("debug").long("debug").help("debug output"))
+        .arg(
+            Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .help("verbose output"),
+        )
         .get_matches();
 
     let input = Path::new(matches.value_of("file").unwrap());
@@ -77,9 +74,9 @@ fn main() -> io::Result<()> {
         verbose: matches.is_present("verbose"),
     };
 
-    let stdin = Summary::new(String::from("STDIN"));
-    let stdout = Summary::new(String::from("STDOUT"));
-    let stderr = Summary::new(String::from("STDERR"));
+    let stdin = Summary::file(String::from("STDIN"));
+    let stdout = Summary::file(String::from("STDOUT"));
+    let stderr = Summary::file(String::from("STDERR"));
 
     let mut fds: HashMap<u32, Summary> = HashMap::new();
 
