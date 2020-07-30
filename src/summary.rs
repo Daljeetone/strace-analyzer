@@ -44,7 +44,7 @@ impl FileDescription {
 
 impl fmt::Display for FileDescription {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FILE Path:{}", self.path)
+        write!(f, "FILE:{}", self.path)
     }
 }
 
@@ -60,6 +60,15 @@ impl SocketDescription {
             bind: String::new(),
             connect: String::new(),
         }
+    }
+
+    pub fn update_bind(&mut self, address: String) {
+        self.bind = address;
+    }
+
+
+    pub fn update_connect(&mut self, address: String) {
+        self.connect = address;
     }
 }
 
@@ -168,6 +177,8 @@ impl Summary {
             }
         }
 
+        // TODO: The entire following code prevents the initial information about socket to be printed
+        // because there is no I/O with the bind/connect address.
         if self.read_freq.is_empty() && self.write_freq.is_empty() {
             debug(format!("no I/O with {}", self.descriptor), config);
             return;

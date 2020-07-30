@@ -27,6 +27,7 @@ use config::Config;
 use log::*;
 use summary;
 use summary::Summary;
+use summary::GenericFileDescriptor;
 
 use regex::Regex;
 use std::collections::HashMap;
@@ -175,6 +176,14 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
 
     lazy_static! {
         static ref RE_SOCKET: Regex = Regex::new(r#"^socket\(.*\)\s+= (\d+)$"#).unwrap();
+    }
+
+    lazy_static! {
+        static ref RE_BIND: Regex = Regex::new(r#"^bind\((\d+), (.*), \d+\)\s+= (\d+).*$"#).unwrap();
+    }
+
+    lazy_static! {
+        static ref RE_CONNECT: Regex = Regex::new(r#"^connect\((\d+), (.*), \d+\)\s+= -?(\d+).*$"#).unwrap();
     }
 
     lazy_static! {
@@ -331,6 +340,40 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
 
             let syscall = "socket";
             insert(fds, fd, Summary::socket(), syscall, config);
+        }
+
+        for cap in RE_BIND.captures_iter(&line) {
+            let fd: u32 = cap[1].parse().unwrap();
+
+            debug(format!("[bind] {}", fd), config);
+
+            if let Some(summary) = fds.get_mut(&fd) {
+                if let GenericFileDescriptor::Socket(socket_description) = &mut summary.descriptor {
+                    let bind_addr: String = cap[2].parse().unwrap();
+                    socket_description.update_bind(bind_addr);
+                } else {
+                    verbose(format!("[bind] not a socket fd {}", fd), config);
+                }
+            } else {
+                verbose(format!("[bind] unknown fd {}", fd), config);
+            }
+        }
+
+        for cap in RE_CONNECT.captures_iter(&line) {
+            let fd: u32 = cap[1].parse().unwrap();
+
+            debug(format!("[connect] {}", fd), config);
+
+            if let Some(summary) = fds.get_mut(&fd) {
+                if let GenericFileDescriptor::Socket(socket_description) = &mut summary.descriptor {
+                    let connect_addr: String = cap[2].parse().unwrap();
+                    socket_description.update_connect(connect_addr);
+                } else {
+                    verbose(format!("[connect] not a socket fd {}", fd), config);
+                }
+            } else {
+                verbose(format!("[connect] unknown fd {}", fd), config);
+            }
         }
 
         for cap in RE_WRITE.captures_iter(&line) {
