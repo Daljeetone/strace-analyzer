@@ -74,7 +74,14 @@ impl SocketDescription {
 
 impl fmt::Display for SocketDescription {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SOCKET Bind:{} Connect:{}", self.bind, self.connect)
+        write!(f, "SOCKET")?;
+        if !self.bind.is_empty() {
+            write!(f, "\n\tbind: {}", self.bind)?;
+        }
+        if !self.connect.is_empty() {
+            write!(f, "\n\tconnect: {}", self.connect)?;
+        }
+        fmt::Result::Ok(())
     }
 }
 
@@ -104,6 +111,7 @@ pub struct Summary {
     write_freq: HashMap<u64, u64>,
     read_bytes: u64,
     write_bytes: u64,
+    accepted_connections: u64,
 }
 
 impl Summary {
@@ -114,6 +122,7 @@ impl Summary {
             write_freq: HashMap::new(),
             read_bytes: 0,
             write_bytes: 0,
+            accepted_connections: 0,
         }
     }
 
@@ -134,6 +143,7 @@ impl Summary {
         self.write_freq.clear();
         self.read_bytes = 0;
         self.write_bytes = 0;
+        self.accepted_connections = 0;
     }
 
     pub fn update_read(&mut self, op_size: u64, bytes: u64) {
@@ -146,6 +156,10 @@ impl Summary {
         let freq = self.write_freq.entry(op_size).or_insert(0);
         *freq += 1;
         self.write_bytes += bytes;
+    }
+
+    pub fn update_accept(&mut self) {
+        self.accepted_connections += 1;
     }
 
     pub fn show(&self, config: &Config) {
@@ -177,9 +191,7 @@ impl Summary {
             }
         }
 
-        // TODO: The entire following code prevents the initial information about socket to be printed
-        // because there is no I/O with the bind/connect address.
-        if self.read_freq.is_empty() && self.write_freq.is_empty() {
+        if self.read_freq.is_empty() && self.write_freq.is_empty()  && self.accepted_connections == 0 {
             debug(format!("no I/O with {}", self.descriptor), config);
             return;
         }
@@ -206,6 +218,14 @@ impl Summary {
                 humanize(self.write_bytes),
                 n_ops,
                 humanize(*op_size),
+                self.descriptor,
+            );
+        }
+
+        if self.accepted_connections != 0 {
+            println!(
+                "accepted {} connections on {}",
+                self.accepted_connections,
                 self.descriptor,
             );
         }

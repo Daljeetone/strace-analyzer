@@ -179,6 +179,10 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
     }
 
     lazy_static! {
+        static ref RE_ACCEPT: Regex = Regex::new(r#"^accept\((\d+), (.*), .*\)\s+= (\d+)$"#).unwrap();
+    }
+
+    lazy_static! {
         static ref RE_BIND: Regex = Regex::new(r#"^bind\((\d+), (.*), \d+\)\s+= (\d+).*$"#).unwrap();
     }
 
@@ -340,6 +344,26 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
 
             let syscall = "socket";
             insert(fds, fd, Summary::socket(), syscall, config);
+        }
+
+        for cap in RE_ACCEPT.captures_iter(&line) {
+            let fd: u32 = cap[1].parse().unwrap();
+            let new_fd: u32 = cap[3].parse().unwrap();
+
+            debug(format!("[accept] {} -> {}", fd, new_fd), config);
+
+            if let Some(summary) = fds.get_mut(&fd) {
+                if let GenericFileDescriptor::Socket(_socket_description) = &mut summary.descriptor {
+                    summary.update_accept();
+                    let syscall = "socket";
+                    insert(fds, new_fd, Summary::socket(), syscall, config);
+
+                } else {
+                    verbose(format!("[accept] called on not a socket fd {}", fd), config);
+                }
+            } else {
+                verbose(format!("[accept] unknown fd {}", fd), config);
+            }
         }
 
         for cap in RE_BIND.captures_iter(&line) {
