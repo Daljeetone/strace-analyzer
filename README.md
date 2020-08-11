@@ -88,24 +88,10 @@ strace-analyzer will **not** do any of the following:
 Installation
 ------------
 
-### Arch Linux
-
-Install the [strace-analyzer AUR package][aur-package]:
-
-```bash
-pacaur -S strace-analyzer
-```
-
-### cargo install
-
-```bash
-cargo install strace-analyzer
-```
-
 ### from source
 
 ```bash
-git clone https://github.com/wookietreiber/strace-analyzer.git
+git clone git@bitbucket.org:anjunasec/strace-analyzer.git
 cd strace-analyzer
 cargo build --release
 install -Dm755 target/release/strace-analyzer ~/bin/strace-analyzer
