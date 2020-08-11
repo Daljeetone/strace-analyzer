@@ -66,7 +66,6 @@ impl SocketDescription {
         self.bind = address;
     }
 
-
     pub fn update_connect(&mut self, address: String) {
         self.connect = address;
     }
@@ -74,7 +73,7 @@ impl SocketDescription {
 
 impl fmt::Display for SocketDescription {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SOCKET")?;
+        write!(f, "SOCKET:")?;
         if !self.bind.is_empty() {
             write!(f, "\n\tbind: {}", self.bind)?;
         }
@@ -186,26 +185,40 @@ impl Summary {
                 }
             }
 
-            if let GenericFileDescriptor::Pipe = self.descriptor {
-                return;
+            // Only print files/sockets which have useful information
+            match &self.descriptor {
+                GenericFileDescriptor::Pipe => return,
+                GenericFileDescriptor::File(_) => {
+                    if self.read_freq.is_empty() && self.write_freq.is_empty() {
+                        debug(String::from("no I/O"), config);
+                        return;
+                    }
+                }
+                GenericFileDescriptor::Socket(socket_description) => {
+                    if (self.read_freq.is_empty()
+                        && self.write_freq.is_empty()
+                        && self.accepted_connections == 0)
+                        || (socket_description.bind.is_empty()
+                            && socket_description.connect.is_empty())
+                    {
+                        debug(String::from("no I/O"), config);
+                        return;
+                    }
+                }
             }
         }
 
-        if self.read_freq.is_empty() && self.write_freq.is_empty()  && self.accepted_connections == 0 {
-            debug(format!("no I/O with {}", self.descriptor), config);
-            return;
-        }
+        println!("{}", self.descriptor);
 
         if !self.read_freq.is_empty() {
             let (op_size, _) = self.read_freq.iter().max().unwrap();
             let n_ops: u64 = self.read_freq.values().sum();
 
             println!(
-                "read {} with {} ops ({} / op) {}",
+                "\tread {} with {} ops ({} / op)",
                 humanize(self.read_bytes),
                 n_ops,
                 humanize(*op_size),
-                self.descriptor,
             );
         }
 
@@ -214,20 +227,15 @@ impl Summary {
             let n_ops: u64 = self.write_freq.values().sum();
 
             println!(
-                "write {} with {} ops ({} / op) {}",
+                "\twrite {} with {} ops ({} / op)",
                 humanize(self.write_bytes),
                 n_ops,
                 humanize(*op_size),
-                self.descriptor,
             );
         }
 
         if self.accepted_connections != 0 {
-            println!(
-                "accepted {} connections on {}",
-                self.accepted_connections,
-                self.descriptor,
-            );
+            println!("\taccepted: {} connections", self.accepted_connections,);
         }
     }
 }

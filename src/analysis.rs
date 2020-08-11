@@ -26,8 +26,8 @@
 use config::Config;
 use log::*;
 use summary;
-use summary::Summary;
 use summary::GenericFileDescriptor;
+use summary::Summary;
 
 use regex::Regex;
 use std::collections::HashMap;
@@ -179,15 +179,28 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
     }
 
     lazy_static! {
-        static ref RE_ACCEPT: Regex = Regex::new(r#"^accept\((\d+), (.*), .*\)\s+= (\d+)$"#).unwrap();
+        static ref RE_ACCEPT: Regex =
+            Regex::new(r#"^accept\((\d+), (.*), .*\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_BIND: Regex = Regex::new(r#"^bind\((\d+), (.*), \d+\)\s+= (\d+).*$"#).unwrap();
+        static ref RE_BIND: Regex =
+            Regex::new(r#"^bind\((\d+), (.*), \d+\)\s+= (\d+).*$"#).unwrap();
     }
 
     lazy_static! {
-        static ref RE_CONNECT: Regex = Regex::new(r#"^connect\((\d+), (.*), \d+\)\s+= -?(\d+).*$"#).unwrap();
+        static ref RE_CONNECT: Regex =
+            Regex::new(r#"^connect\((\d+), (.*), \d+\)\s+= (\d+).*$"#).unwrap();
+    }
+
+    lazy_static! {
+        static ref RE_SENDTO: Regex =
+            Regex::new(r#"^sendto\((\d+),.*, (\d+), .*, .*, .*\)\s+= (\d+)$"#).unwrap();
+    }
+
+    lazy_static! {
+        static ref RE_RECVFROM: Regex =
+            Regex::new(r#"^recvfrom\((\d+),.*, (\d+), .*, .*, .*\)\s+= (\d+)$"#).unwrap();
     }
 
     lazy_static! {
@@ -353,11 +366,11 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
             debug(format!("[accept] {} -> {}", fd, new_fd), config);
 
             if let Some(summary) = fds.get_mut(&fd) {
-                if let GenericFileDescriptor::Socket(_socket_description) = &mut summary.descriptor {
+                if let GenericFileDescriptor::Socket(_socket_description) = &mut summary.descriptor
+                {
                     summary.update_accept();
                     let syscall = "socket";
                     insert(fds, new_fd, Summary::socket(), syscall, config);
-
                 } else {
                     verbose(format!("[accept] called on not a socket fd {}", fd), config);
                 }
@@ -397,6 +410,30 @@ pub fn analyze(fds: &mut HashMap<u32, Summary>, input: &Path, config: &Config) -
                 }
             } else {
                 verbose(format!("[connect] unknown fd {}", fd), config);
+            }
+        }
+
+        for cap in RE_RECVFROM.captures_iter(&line) {
+            let fd: u32 = cap[1].parse().unwrap();
+
+            if let Some(summary) = fds.get_mut(&fd) {
+                let opsize: u64 = cap[2].parse().unwrap();
+                let bytes: u64 = cap[3].parse().unwrap();
+                summary.update_read(opsize, bytes);
+            } else {
+                verbose(format!("[read] unknown fd {}", fd), config);
+            }
+        }
+
+        for cap in RE_SENDTO.captures_iter(&line) {
+            let fd: u32 = cap[1].parse().unwrap();
+
+            if let Some(summary) = fds.get_mut(&fd) {
+                let opsize: u64 = cap[2].parse().unwrap();
+                let bytes: u64 = cap[3].parse().unwrap();
+                summary.update_write(opsize, bytes);
+            } else {
+                verbose(format!("[write] unknown fd {}", fd), config);
             }
         }
 
